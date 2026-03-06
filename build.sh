@@ -7,19 +7,21 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$PROJECT_DIR/build"
 pushd "$PROJECT_DIR/build" > /dev/null
 
+FLAGS="-g -O0 -Wall -std=c++20 -fno-exceptions -fno-rtti"
+
 # 3. Compile based on the OS
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    clang++ -g -O0 -Wall -std=c++20 \
+    clang++ $FLAGS \
         -framework Cocoa \
-        "$PROJECT_DIR/code/osx_handmade.mm" \
+        "$PROJECT_DIR/code/osx_main.mm" \
         -o handmade
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
-    g++ -g -O0 -Wall -std=c++20 \
+    g++ $FLAGS \
         "$PROJECT_DIR/code/linux_handmade.cpp" \
         -o handmade \
-        -lX11 -lGL -lpthread -ldl
+        -lSDL2
 fi
 
 # 4. Return to where we started
