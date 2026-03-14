@@ -33,6 +33,8 @@ struct mac_offscreen_buffer {
 
 global_variable bool GlobalRunning = false;
 global_variable mac_offscreen_buffer GlobalBackbuffer;
+global_variable int GlobalXOffset = 0; // Added
+global_variable int GlobalYOffset = 0; // Added
 
 // 2. The Mac equivalent of Win32ResizeDIBSection
 /*
@@ -105,19 +107,42 @@ internal void MacUpdateWindow(mac_offscreen_buffer *Buffer, CGContextRef Context
 // 4. Game Logic: Rendering the weird gradient
 internal void RenderWeirdGradient(mac_offscreen_buffer *Buffer, int XOffset, int YOffset) {
     uint8 *Row = (uint8 *)Buffer->Memory;
-    
+
     for (int Y = 0; Y < Buffer->Height; ++Y) {
         uint32 *Pixel = (uint32 *)Row;
         
         for (int X = 0; X < Buffer->Width; ++X) {
             uint8 Blue = (X + XOffset);
             uint8 Green = (Y + YOffset);
-            
+            uint8 Red = (Y + YOffset);
+
             // On Apple Silicon / Intel Macs (Little Endian), the layout is BB GG RR xx
-            *Pixel++ = (Green << 8) | Blue;
+            *Pixel++ = (Red << 16) | (Green << 8) | Blue;
         }
         Row += Buffer->Pitch;
     }
+/*
+   for (int Y = 0; Y < Buffer->Height; ++Y) {
+      uint8 *pixel = (uint8 *)Row;
+
+      for (int X = 0; X < Buffer->Width; ++X) {
+        // Pixel in memory: BB GG RR xx 
+        // In Register: 0x xx RR GG BB (Little Endian Architecture)
+        *pixel = (uint8)X;
+        ++pixel;
+
+        *pixel = (uint8)Y;
+        ++pixel;
+
+        *pixel = (uint8)Y;
+        ++pixel;
+
+        *pixel = 0;
+        ++pixel;
+      }
+      Row += Buffer->Pitch;
+    }
+*/
 /*
 Buffer->Memory is void*
 void* cannot be used for pointer arithmetic.
@@ -152,8 +177,18 @@ void* cannot be used for pointer arithmetic.
     NSWindow *window = [notification object];
     NSRect clientRect = [[window contentView] bounds];
 
-    // Resize our buffer when the window resizes
+    // 1. Resize our buffer
     MacResizeDIBSection(&GlobalBackbuffer, clientRect.size.width, clientRect.size.height);
+
+    // 2. MANUALLY RENDER A FRAME!
+    // Since the main loop is paused, we must fill the new mmap zeroes with our gradient.
+    GlobalXOffset += 1;
+    GlobalYOffset += 2;
+
+    RenderWeirdGradient(&GlobalBackbuffer, GlobalXOffset, GlobalYOffset);
+
+    // 3. Force the view to redraw immediately
+    [[window contentView] setNeedsDisplay:YES];
 }
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
@@ -227,9 +262,6 @@ int main(int argc, const char *argv[]) {
 
       GlobalRunning = true;
 
-      int XOffset = 0;
-      int YOffset = 0;
-
       // Start the Custom Event loop.
       while(GlobalRunning){
         @autoreleasepool {
@@ -242,14 +274,14 @@ int main(int argc, const char *argv[]) {
           }
           // Game Logic
           // 1. Render our game to the memory buffer
-          RenderWeirdGradient(&GlobalBackbuffer, XOffset, YOffset);
+          RenderWeirdGradient(&GlobalBackbuffer, GlobalXOffset, GlobalYOffset);
 
           // 2. Tell macOS that our view needs to be redrawn using this frame
           NSWindow *window = [appDelegate window];
           [[window contentView] setNeedsDisplay:YES];
           
-          XOffset += 1;
-          YOffset += 2;
+          GlobalXOffset += 1;
+          GlobalYOffset += 2;
         }
         // Frame pacing: sleep to avoid 100% CPU, target ~60fps
         [NSThread sleepForTimeInterval:0.016]; // 16.67ms ≈ 60 FPS
